@@ -13,19 +13,14 @@ files:
   - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
   - "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
   - "!**/node_modules/.bin"
+  # opencode binaries are shipped per target arch via extraResources below;
+  # npm's copies only match the machine that ran `npm ci`.
+  - "!**/node_modules/opencode-ai{,/**}"
+  - "!**/node_modules/opencode-{darwin,linux,windows}-*{,/**}"
 
 # Extract python scripts from asar so Python subprocess can read them
 asarUnpack:
   - "python/**/*"
-  # The opencode CLI is spawned as a subprocess and cannot run from inside asar.
-  # NOTE: this binary is ~194 MB per architecture. If that is too much for your
-  # installer, drop opencode-ai from dependencies and have users install it
-  # themselves — provider.ts already searches common install paths and shows an
-  # actionable error when it is missing.
-  - "node_modules/opencode-ai/**"
-  - "node_modules/opencode-darwin-*/**"
-  - "node_modules/opencode-linux-*/**"
-  - "node_modules/opencode-windows-*/**"
 
 extraResources:
   - from: resources/
@@ -68,6 +63,9 @@ mac:
       to: "resources/python-mac"
       filter:
         - "**/*"
+    # Fetched per arch by scripts/fetch-opencode.mjs (~180 MB each).
+    - from: "vendor/opencode/darwin-${arch}"
+      to: "opencode"
 
 win:
   target:
@@ -81,6 +79,8 @@ win:
       to: "resources/python-win"
       filter:
         - "**/*"
+    - from: "vendor/opencode/win32-${arch}"
+      to: "opencode"
 
 nsis:
   oneClick: false

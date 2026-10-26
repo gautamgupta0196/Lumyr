@@ -18,6 +18,20 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
     steps:
+      - name: Check signing secrets
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          missing=""
+          for v in APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::macOS signing needs these repository secrets:$missing"
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -46,6 +60,11 @@ jobs:
         run: |
           chmod +x scripts/prepare-python.sh
           ./scripts/prepare-python.sh all
+
+      # npm only installs opencode for the runner's own arch, but this job
+      # builds both Intel and Apple Silicon apps.
+      - name: Fetch opencode binaries (macOS)
+        run: node scripts/fetch-opencode.mjs darwin-arm64 darwin-x64
 
       - name: Import signing certificate
         env:
@@ -94,6 +113,21 @@ jobs:
               codesign --verify --deep --strict "$app"
               codesign -dvv "$app" 2>&1 | grep "Authority=" | head -1
             fi
+          done
+
+      - name: Verify bundled opencode matches each app's architecture
+        run: |
+          for app in release/mac*/Lumyr.app; do
+            [ -d "$app" ] || continue
+            app_arch=$(file -b "$app/Contents/MacOS/Lumyr" | grep -oE 'x86_64|arm64')
+            oc="$app/Contents/Resources/opencode/opencode"
+            oc_arch=$(file -b "$oc" | grep -oE 'x86_64|arm64')
+            echo "$app: app=$app_arch opencode=$oc_arch"
+            if [ "$app_arch" != "$oc_arch" ]; then
+              echo "::error::$app ships an opencode binary for the wrong architecture"
+              exit 1
+            fi
+            codesign --verify --strict "$oc"
           done
 
       - name: Verify macOS notarization (stapler)
@@ -151,6 +185,9 @@ jobs:
 
       - name: Build frontend and electron
         run: npx tsc && npx vite build
+
+      - name: Fetch opencode binaries (Windows)
+        run: node scripts/fetch-opencode.mjs win32-x64 win32-arm64
 
       - name: Build Windows (x64 + arm64)
         run: npx electron-builder --win --x64 --arm64 --publish never
@@ -219,11 +256,15 @@ jobs:
           gh release create "v${VERSION}" \
             "${ASSETS[@]}" \
             --title "Lumyr v${VERSION}" \
-            --notes "## Downloads
+            --notes "Ask your database for a dashboard, in plain English. Lumyr runs on your machine and uses your own Anthropic API key. See https://gautamgupta0196.github.io/Lumyr/
 
-          ### macOS (signed & notarized)
-          - **Apple Silicon (M1/M2/M3/M4):** Lumyr-${VERSION}-arm64.dmg
-          - **Intel Mac:** Lumyr-${VERSION}.dmg
+          ## Downloads
+
+          ### macOS (signed and notarized)
+          - **Apple Silicon (M1–M4):** \`Lumyr-${VERSION}-arm64.dmg\`
+          - **Intel:** \`Lumyr-${VERSION}.dmg\`
 
           ### Windows
-          - **Windows Installer (x64 + ARM64):** Lumyr-Setup-${VERSION}.exe"
+          - **Installer (x64 and ARM64):** \`Lumyr-Setup-${VERSION}.exe\`. The installer isn't code-signed yet, so SmartScreen will warn on first run: choose **More info → Run anyway**.
+
+          On first launch, open **Settings** and paste your Anthropic API key."

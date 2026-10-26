@@ -18,6 +18,8 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { spawnSync } from 'child_process'
+import net from 'net'
+import { pathToFileURL } from 'url'
 import { app } from 'electron'
 import type { createOpencode as CreateOpencode, OpencodeClient, Config } from '@opencode-ai/sdk'
 import { createLogger } from '../logger.js'
@@ -44,8 +46,8 @@ export class MissingApiKeyError extends Error {
 export class OpencodeNotInstalledError extends Error {
   constructor() {
     super(
-      'The opencode CLI was not found. Install it with "npm i -g opencode-ai" ' +
-        '(or see opencode.ai/docs), then restart Lumyr.'
+      'The opencode CLI was not found. Reinstall Lumyr, or install opencode with ' +
+        '"npm i -g opencode-ai" and restart.'
     )
     this.name = 'OpencodeNotInstalledError'
   }
@@ -100,6 +102,25 @@ const importEsm = new Function('specifier', 'return import(specifier)') as (
 ) => Promise<typeof import('@opencode-ai/sdk')>
 
 /**
+ * Absolute URL of the SDK's ESM entry. A bare '@opencode-ai/sdk' specifier
+ * would resolve relative to whatever referrer V8 assigns code built with
+ * `new Function`, which differs between dev and a packaged app (cwd is `/`
+ * there). app.getAppPath() is the project root in dev and app.asar when
+ * packaged, and Electron can import ESM from inside asar by absolute path.
+ */
+function opencodeSdkUrl(): string {
+  try {
+    const dir = path.join(app.getAppPath(), 'node_modules', '@opencode-ai', 'sdk')
+    const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf-8'))
+    const entry = pkg.exports?.['.']?.import ?? pkg.module ?? pkg.main
+    if (entry) return pathToFileURL(path.join(dir, entry)).href
+  } catch {
+    // Fall through to normal resolution.
+  }
+  return '@opencode-ai/sdk'
+}
+
+/**
  * Where to look for the `opencode` executable.
  *
  * Two problems to solve: we ship the binary via the opencode-ai dependency, so
@@ -108,8 +129,11 @@ const importEsm = new Function('specifier', 'return import(specifier)') as (
  * their terminal. asar can't execute binaries, hence the .unpacked variants.
  */
 function binarySearchPaths(): string[] {
+  // Release builds ship the binary for their own arch here (see
+  // scripts/fetch-opencode.mjs and extraResources in electron-builder.yml).
+  const packaged = app.isPackaged ? [path.join(process.resourcesPath, 'opencode')] : []
   const roots = [app.getAppPath(), process.resourcesPath].filter(Boolean) as string[]
-  const bundled: string[] = []
+  const bundled: string[] = [...packaged]
   for (const root of roots) {
     for (const base of [root, root.replace(/\.asar$/, '.asar.unpacked')]) {
       bundled.push(
@@ -132,6 +156,23 @@ function augmentedPath(): string {
   const current = (process.env.PATH || '').split(path.delimiter).filter(Boolean)
   const extra = binarySearchPaths().filter(p => !current.includes(p))
   return [...current, ...extra].join(path.delimiter)
+}
+
+/**
+ * opencode treats `--port=0` as "use the default" and binds 4096, so concurrent
+ * runs, or a developer's own opencode session, would collide. Ask the OS for a
+ * free port instead.
+ */
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer()
+    srv.unref()
+    srv.on('error', reject)
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address() as net.AddressInfo
+      srv.close(() => resolve(port))
+    })
+  })
 }
 
 function opencodeInstalled(): boolean {
@@ -295,13 +336,13 @@ export async function runOpencodeDashboard(
 
     bridge = await startMcpBridge(data)
 
-    const { createOpencode } = (await importEsm('@opencode-ai/sdk')) as {
+    const { createOpencode } = (await importEsm(opencodeSdkUrl())) as {
       createOpencode: typeof CreateOpencode
     }
 
     const opencode = await createOpencode({
       hostname: '127.0.0.1',
-      port: 0, // let the OS pick; the SDK parses the real URL from stdout
+      port: await freePort(),
       timeout: 30_000,
       config: buildConfig(bridge.url, options.mcpServers),
     })

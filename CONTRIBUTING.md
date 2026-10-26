@@ -66,6 +66,25 @@ the model provider under the user's own key.
 in the main process behind `safeStorage`. The renderer asks the main process to
 do things; it never holds a secret.
 
+## Releasing
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds signed
+macOS (Intel and Apple Silicon) and Windows installers and publishes a GitHub
+Release. The version comes from `package.json`.
+
+The opencode binary is architecture-specific and too large to commit.
+`scripts/fetch-opencode.mjs` downloads the right one for each target into
+`vendor/opencode/`, and `electron-builder.yml` ships it via `extraResources`.
+To package locally:
+
+```bash
+node scripts/fetch-opencode.mjs darwin-arm64     # or darwin-x64, win32-x64, win32-arm64
+CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64 --dir
+```
+
+macOS signing needs repository secrets `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`,
+`APPLE_TEAM_ID`, `APPLE_CERTIFICATE_BASE64` and `APPLE_CERTIFICATE_PASSWORD`.
+
 ## Reporting bugs
 
 Open an issue with your OS, app version, the data source type, and what you
