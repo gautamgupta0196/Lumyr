@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f1a2b"/>
+      <stop offset="100%" stop-color="#070c14"/>
+    </linearGradient>
+
+    <linearGradient id="leftFace" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#5ba3d9"/>
+    </linearGradient>
+
+    <linearGradient id="rightFace" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a8d8ff"/>
+      <stop offset="100%" stop-color="#2d6a9f"/>
+    </linearGradient>
+
+    <linearGradient id="bottomFace" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#7fc4f5"/>
+      <stop offset="100%" stop-color="#1e4a6d"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="16" y="16" width="480" height="480" rx="107" ry="107" fill="url(#bg)"/>
+
+  <g>
+    <path d="M256 65 L100 375 L256 310 Z" fill="url(#leftFace)"/>
+    <path d="M256 65 L412 375 L256 310 Z" fill="url(#rightFace)"/>
+    <path d="M100 375 L256 310 L412 375 L256 440 Z" fill="url(#bottomFace)"/>
+  </g>
+</svg>

@@ -1,0 +1,102 @@
+appId: com.lumyr.app
+productName: Lumyr
+copyright: Copyright © 2024
+
+directories:
+  output: release
+  buildResources: resources
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - python/**/*
+  - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+  - "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
+  - "!**/node_modules/.bin"
+
+# Extract python scripts from asar so Python subprocess can read them
+asarUnpack:
+  - "python/**/*"
+  # The opencode CLI is spawned as a subprocess and cannot run from inside asar.
+  # NOTE: this binary is ~194 MB per architecture. If that is too much for your
+  # installer, drop opencode-ai from dependencies and have users install it
+  # themselves — provider.ts already searches common install paths and shows an
+  # actionable error when it is missing.
+  - "node_modules/opencode-ai/**"
+  - "node_modules/opencode-darwin-*/**"
+  - "node_modules/opencode-linux-*/**"
+  - "node_modules/opencode-windows-*/**"
+
+extraResources:
+  - from: resources/
+    to: resources/
+    filter:
+      - "**/*"
+      - "!python-mac-arm64/**"
+      - "!python-mac-x64/**"
+      - "!python-win/**"
+
+afterPack: scripts/afterPack.js
+afterSign: scripts/notarize.js
+
+fileAssociations:
+  - ext: lmr
+    name: Lumyr Dashboard
+    description: Lumyr Dashboard Package
+    mimeType: application/x-lumyr
+    icon: resources/lmr-icon
+    role: Editor
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  icon: resources/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  extraResources:
+    - from: "resources/python-mac-${arch}"
+      to: "resources/python-mac"
+      filter:
+        - "**/*"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+  icon: resources/icon.ico
+  extraResources:
+    - from: "resources/python-win"
+      to: "resources/python-win"
+      filter:
+        - "**/*"
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: "${productName}-Setup-${version}.${ext}"
+  deleteAppDataOnUninstall: false
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  installerHeaderIcon: resources/icon.ico
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+publish:
+  provider: github
+  owner: gautamgupta0196
+  repo: Lumyr
+  private: true
+  releaseType: release

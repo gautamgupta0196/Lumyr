@@ -1,0 +1,229 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-mac:
+    runs-on: macos-14 # Apple Silicon runner
+    timeout-minutes: 240
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache bundled Python (macOS)
+        id: cache-python-mac
+        uses: actions/cache@v4
+        with:
+          path: |
+            resources/python-mac-arm64
+            resources/python-mac-x64
+          key: macos-python-${{ hashFiles('python/requirements.txt', 'scripts/prepare-python.sh') }}
+          restore-keys: |
+            macos-python-
+
+      - name: Prepare Python (macOS)
+        if: steps.cache-python-mac.outputs.cache-hit != 'true'
+        run: |
+          chmod +x scripts/prepare-python.sh
+          ./scripts/prepare-python.sh all
+
+      - name: Import signing certificate
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          # Create temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import certificate
+          echo "$CERTIFICATE_BASE64" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security import $RUNNER_TEMP/certificate.p12 \
+            -k "$KEYCHAIN_PATH" \
+            -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+
+          # Allow codesign to access keychain
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Add to search list
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          # Verify
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: Build frontend and electron
+        run: npx tsc && npx vite build
+
+      - name: Build, sign, and notarize macOS (x64 + arm64)
+        run: |
+          sudo launchctl limit maxfiles 524288 524288
+          ulimit -n 524288
+          npx electron-builder --mac --x64 --arm64 --publish never
+
+      - name: Verify macOS signatures
+        run: |
+          for app in release/mac*/Lumyr.app; do
+            if [ -d "$app" ]; then
+              echo "Verifying: $app"
+              codesign --verify --deep --strict "$app"
+              codesign -dvv "$app" 2>&1 | grep "Authority=" | head -1
+            fi
+          done
+
+      - name: Verify macOS notarization (stapler)
+        run: |
+          for app in release/mac*/Lumyr.app; do
+            if [ -d "$app" ]; then
+              echo "Stapler validate: $app"
+              xcrun stapler validate "$app"
+            fi
+          done
+
+      - name: List artifacts
+        run: ls -lh release/*.dmg release/*.zip release/latest-mac.yml 2>/dev/null || true
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-artifacts
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/latest-mac.yml
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache bundled Python (Windows)
+        id: cache-python-win
+        uses: actions/cache@v4
+        with:
+          path: |
+            resources/python-win
+          key: windows-python-${{ hashFiles('python/requirements.txt', 'scripts/prepare-python.ps1') }}
+          restore-keys: |
+            windows-python-
+
+      - name: Prepare Python (Windows)
+        if: steps.cache-python-win.outputs.cache-hit != 'true'
+        run: powershell -ExecutionPolicy Bypass -File scripts/prepare-python.ps1
+
+      - name: Build frontend and electron
+        run: npx tsc && npx vite build
+
+      - name: Build Windows (x64 + arm64)
+        run: npx electron-builder --win --x64 --arm64 --publish never
+
+      - name: List artifacts
+        run: dir release
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: |
+            release/*.exe
+            release/latest.yml
+          if-no-files-found: error
+
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    needs: [build-mac, build-windows]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lh release/*
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+
+          # Collect all release assets
+          ASSETS=()
+          for f in release/*.dmg release/*.zip release/*.exe release/latest-mac.yml release/latest.yml; do
+            [ -f "$f" ] && ASSETS+=("$f")
+          done
+
+          if [ ${#ASSETS[@]} -eq 0 ]; then
+            echo "No assets found to upload."
+            exit 1
+          fi
+
+          # Delete existing release if it exists (e.g. manually created)
+          gh release delete "v${VERSION}" --yes 2>/dev/null || true
+
+          gh release create "v${VERSION}" \
+            "${ASSETS[@]}" \
+            --title "Lumyr v${VERSION}" \
+            --notes "## Downloads
+
+          ### macOS (signed & notarized)
+          - **Apple Silicon (M1/M2/M3/M4):** Lumyr-${VERSION}-arm64.dmg
+          - **Intel Mac:** Lumyr-${VERSION}.dmg
+
+          ### Windows
+          - **Windows Installer (x64 + ARM64):** Lumyr-Setup-${VERSION}.exe"

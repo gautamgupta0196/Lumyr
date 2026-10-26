@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f1a2b"/>
+      <stop offset="100%" stop-color="#070c14"/>
+    </linearGradient>
+
+    <linearGradient id="leftFace" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#5ba3d9"/>
+    </linearGradient>
+
+    <linearGradient id="rightFace" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a8d8ff"/>
+      <stop offset="100%" stop-color="#2d6a9f"/>
+    </linearGradient>
+
+    <linearGradient id="bottomFace" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#7fc4f5"/>
+      <stop offset="100%" stop-color="#1e4a6d"/>
+    </linearGradient>
+
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect x="22" y="22" width="980" height="980" rx="220" ry="220" fill="url(#bg)"/>
+
+  <!-- 3D Prism shape -->
+  <g filter="url(#glow)">
+    <!-- Left face -->
+    <path d="M512 130 L200 750 L512 620 Z" fill="url(#leftFace)"/>
+
+    <!-- Right face -->
+    <path d="M512 130 L824 750 L512 620 Z" fill="url(#rightFace)"/>
+
+    <!-- Bottom face -->
+    <path d="M200 750 L512 620 L824 750 L512 880 Z" fill="url(#bottomFace)"/>
+  </g>
+</svg>

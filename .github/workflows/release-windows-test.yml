@@ -1,0 +1,90 @@
+name: Windows Test Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache bundled Python (Windows)
+        id: cache-python-win
+        uses: actions/cache@v4
+        with:
+          path: |
+            resources/python-win
+          key: windows-python-${{ hashFiles('python/requirements.txt', 'scripts/prepare-python.ps1') }}
+          restore-keys: |
+            windows-python-
+
+      - name: Prepare Python (Windows)
+        if: steps.cache-python-win.outputs.cache-hit != 'true'
+        run: powershell -ExecutionPolicy Bypass -File scripts/prepare-python.ps1
+
+      - name: Build frontend and electron
+        run: npx tsc && npx vite build
+
+      - name: Build Windows (x64)
+        run: npx electron-builder --win --x64 --publish never
+
+      - name: Verify NSIS installer integrity
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem release\*.exe | Where-Object { $_.Name -match 'Setup' } | Select-Object -First 1
+          if (-not $exe) { Write-Error "No installer exe found"; exit 1 }
+          Write-Host "Installer: $($exe.Name), Size: $($exe.Length) bytes"
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA512).Hash
+          Write-Host "SHA512: $hash"
+          $bytes = [System.IO.File]::ReadAllBytes($exe.FullName)
+          if ($bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { Write-Error "Invalid PE header"; exit 1 }
+          Write-Host "PE header valid"
+
+      - name: List artifacts
+        run: dir release
+
+      - name: Extract version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Create Windows-only test release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+
+          # Delete existing test release if present
+          gh release delete "v${VERSION}-win-test" --yes 2>/dev/null || true
+          git tag -d "v${VERSION}-win-test" 2>/dev/null || true
+          git push origin ":refs/tags/v${VERSION}-win-test" 2>/dev/null || true
+
+          ASSETS=()
+          for f in release/*.exe release/latest.yml; do
+            [ -f "$f" ] && ASSETS+=("$f")
+          done
+
+          gh release create "v${VERSION}-win-test" \
+            "${ASSETS[@]}" \
+            --title "Lumyr v${VERSION} - Windows Test" \
+            --notes "Windows-only test build (x64). Test the installer before full release." \
+            --prerelease

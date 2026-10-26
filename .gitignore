@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-electron/
+release/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Editor directories
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+.eggs/
+venv/
+.venv/
+
+# Bundled Python (generated during build)
+resources/python-win/
+resources/python-mac/
+resources/python-mac-arm64/
+resources/python-mac-x64/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Credentials (never commit these!)
+*credentials*.json
+*service-account*.json
+*.pem
+*.key
+
+# Claude Code per-user settings (may contain tokens in allowed commands)
+.claude/settings.local.json
+
+# Local MCP server config for Claude Code (contains bearer tokens)
+.mcp.json
