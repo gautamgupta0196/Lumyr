@@ -93,6 +93,13 @@ agent, driven from `electron/opencode/provider.ts`:
 The agent writes `app.py`; its contents are returned to the renderer, which
 calls `streamlit.runCode()` to run it.
 
+Packaging: release builds ship the opencode binary for their own arch at
+`Resources/opencode/` (fetched by `scripts/fetch-opencode.mjs`, wired through
+`extraResources`); the npm-installed copies are excluded because they only match
+the CI runner's arch. The SDK is ESM-only and is imported by absolute path from
+`app.getAppPath()`, and opencode gets an explicit free port because it treats
+`--port=0` as its default, 4096.
+
 Cancellation: `claude:generate-agent` registers an `AbortController` in
 `activeRuns` keyed by `runId`; `claude:cancel-agent` aborts it.
 

@@ -1,6 +1,6 @@
 {
   "name": "lumyr",
-  "version": "0.9.11",
+  "version": "1.0.0",
   "description": "Open-source, local-first AI dashboard builder. Bring your own API key.",
   "license": "MIT",
   "homepage": "https://gautamgupta0196.github.io/Lumyr/",

@@ -58,3 +58,6 @@ resources/python-mac-x64/
 
 # Local MCP server config for Claude Code (contains bearer tokens)
 .mcp.json
+
+# per-target opencode binaries, fetched at release time
+vendor/
