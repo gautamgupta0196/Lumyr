@@ -24,6 +24,10 @@ psycopg2-binary>=2.9.9
 # Snowflake
 snowflake-connector-python>=3.6.0
 
+# cryptography 49+ ships no Intel macOS wheels (arm64 only), so pip would try to
+# compile it from Rust source for the x64 bundle and fail. Pinned for Intel only.
+cryptography<49 ; sys_platform == "darwin" and platform_machine == "x86_64"
+
 # AWS Redshift
 redshift_connector>=2.1.0
 
